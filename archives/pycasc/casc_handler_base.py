@@ -23,9 +23,9 @@ class CASCHandlerBase:
             raise NotImplementedError("Online storage is not implemented in pycasc")
         try:
             stream = self.get_local_data_stream(key)
-            return BLTEHandler(stream, key, validate_data=self.config.validate_data).open_file()
         except Exception:
             return self.open_file_online(key)
+        return BLTEHandler(stream, key, validate_data=self.config.validate_data).open_file()
 
     def preview_file_by_key(self, key: MD5Hash, max_bytes: int) -> bytes:
         if self.config.online_mode:

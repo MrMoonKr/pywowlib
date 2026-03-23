@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -11,6 +12,8 @@ from .salsa20 import Salsa20
 class KeyService:
     KEYS_URL = "https://raw.githubusercontent.com/wowdev/TACTKeys/master/WoW.txt"
     CACHE_PATH = get_cache_dir() / "TACTKeys_WoW.txt"
+    CUSTOM_KEYS_ENV = "PYWOWLIB_TACT_KEYS_PATH"
+    CUSTOM_KEYS_PATH = get_cache_dir() / "TACTKeys_WoW_Custom.txt"
     CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
     KEYS: dict[int, bytes] = {
         0x402CD9D8D6BFED98: bytes.fromhex("AEB0EADEA47612FE6C041A03958DF241"),
@@ -46,19 +49,13 @@ class KeyService:
 
         try:
             cls._refresh_cache_if_needed()
-            for raw_line in cls.CACHE_PATH.read_text(encoding="utf-8").splitlines():
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
+            cls._load_keys_file(cls.CACHE_PATH)
 
-                tokens = line.split()
-                if len(tokens) != 2:
-                    continue
-
-                try:
-                    cls.KEYS[int(tokens[0], 16)] = bytes.fromhex(tokens[1])
-                except ValueError:
-                    continue
+            custom_path = os.environ.get(cls.CUSTOM_KEYS_ENV)
+            if custom_path:
+                cls._load_keys_file(Path(custom_path))
+            else:
+                cls._load_keys_file(cls.CUSTOM_KEYS_PATH)
         except Exception:
             return
 
@@ -72,3 +69,22 @@ class KeyService:
         req = Request(cls.KEYS_URL, headers={"User-Agent": "pycasc"})
         with urlopen(req) as response:
             cls.CACHE_PATH.write_bytes(response.read())
+
+    @classmethod
+    def _load_keys_file(cls, path: Path) -> None:
+        if not path.is_file():
+            return
+
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            tokens = line.split()
+            if len(tokens) != 2:
+                continue
+
+            try:
+                cls.KEYS[int(tokens[0], 16)] = bytes.fromhex(tokens[1])
+            except ValueError:
+                continue
