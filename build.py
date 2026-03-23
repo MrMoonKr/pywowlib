@@ -50,9 +50,6 @@ def clean_build_data(ext_dirs: Iterable[str]):
     for ext_dir in ext_dirs:
         shutil.rmtree(os.path.join(ext_dir, "build"), ignore_errors=True)
 
-    shutil.rmtree("archives/casc/CASCLib/build", ignore_errors=True)
-    shutil.rmtree("archives/mpq/native/StormLib/build", ignore_errors=True)
-
 
 def build_project(debug: bool, clean: bool):
 
@@ -74,8 +71,6 @@ def build_project(debug: bool, clean: bool):
     root_path = os.path.realpath(os.path.dirname(os.path.abspath(__file__)).replace('\\', '/'))
 
     extension_dirs = (
-        "archives/casc/",
-        "archives/mpq/native/",
         "blp/BLP2PNG/",
         "blp/PNG2BLP/"
     )

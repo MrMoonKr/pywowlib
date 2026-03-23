@@ -1,4 +1,3 @@
-import re
 import os
 import time
 import csv
@@ -7,18 +6,17 @@ import hashlib
 from typing import Union, List, Dict, Tuple
 
 from .. import WoWVersionManager, WoWVersions
-from .mpq import MPQFile
-from .casc.CASC import CASCHandler, FileOpenFlags, LocaleFlags
+from .pycasc import CASCHandler, LocaleFlags
 from ..wdbx.wdbc import DBCFile
-from ..blp import BLP2PNG
 
 
 class WoWFileData:
     def __init__(self, wow_path, project_path):
         self.wow_path = wow_path
-        self.files = self.init_mpq_storage(self.wow_path, project_path) \
-            if WoWVersionManager().client_version < WoWVersions.WOD else self.init_casc_storage(self.wow_path,
-                                                                                                project_path)
+        if WoWVersionManager().client_version < WoWVersions.WOD:
+            raise NotImplementedError("\nMPQ support was removed. pywowlib now supports WOD+ CASC clients only.")
+
+        self.files = self.init_casc_storage(self.wow_path, project_path)
 
         self.db_files_client = DBFilesClient(self)
         self.db_files_client.init_tables()
@@ -33,16 +31,10 @@ class WoWFileData:
         """ Check if the file is available in WoW filesystem """
         for storage, storage_type in reversed(self.files):
             if storage_type:
-                if WoWVersionManager().client_version < WoWVersions.WOD:
-                    identifier = identifier.replace('/', '\\')
-                    file = identifier in storage
+                if isinstance(identifier, int):
+                    file = storage.file_exists_by_file_data_id(identifier)
                 else:
-
-                    if isinstance(identifier, int):
-                        file = (identifier, FileOpenFlags.CASC_OPEN_BY_FILEID) in storage
-
-                    elif isinstance(identifier, str):
-                        file = (identifier, FileOpenFlags.CASC_OPEN_BY_NAME) in storage
+                    file = storage.file_exists_by_name(identifier)
 
             else:
 
@@ -64,62 +56,30 @@ class WoWFileData:
                   , no_exc: bool = False) -> Tuple[bytes, str]:
         """ Read the latest version of the file from loaded archives and directories. """
 
-        if WoWVersionManager().client_version < WoWVersions.WOD:
+        if local_dir:
 
-            if local_dir:
-                local_path = os.path.join(local_dir, os.path.basename(identifier))
+            filepath = self.guess_filepath(identifier, file_format) if isinstance(identifier, int) else identifier
 
+            if filepath:
+                local_path = os.path.join(local_dir, os.path.basename(filepath))
                 if os.path.isfile(local_path):
                     return open(local_path, 'rb').read(), local_path
 
-                local_path = os.path.join(local_dir, identifier)
+                local_path = os.path.join(local_dir, filepath)
                 if os.path.isfile(local_path):
                     return open(local_path, 'rb').read(), local_path
 
-            storage, is_archive = self.has_file(identifier)
+        storage, is_archive = self.has_file(identifier)
 
-            if storage:
+        if storage:
 
-                if is_archive:
-                    return storage.open(identifier.replace('/', '\\')).read(), ""
+            if is_archive:
+                open_file = storage.open_file_by_file_data_id if isinstance(identifier, int) else storage.open_file_by_name
+                with open_file(identifier) as stream:
+                    return stream.read(), ""
 
-                else:
-                    filepath = os.path.join(storage, identifier)
-                    return open(filepath, "rb").read(), filepath
-
-        else:
-
-            if local_dir:
-
-                filepath = self.guess_filepath(identifier, file_format) if isinstance(identifier, int) else identifier
-
-                if filepath:
-                    local_path = os.path.join(local_dir, os.path.basename(filepath))
-
-                    if os.path.isfile(local_path):
-                        return open(local_path, 'rb').read(), local_path
-
-                    local_path = os.path.join(local_dir, filepath)
-
-                    if os.path.isfile(local_path):
-                        return open(local_path, 'rb').read(), local_path
-
-            storage, is_archive = self.has_file(identifier)
-
-            if storage:
-
-                if is_archive:
-                    open_flag = FileOpenFlags.CASC_OPEN_BY_FILEID \
-                        if isinstance(identifier, int) else FileOpenFlags.CASC_OPEN_BY_NAME
-
-                    with storage.read_file(identifier, open_flag) as casc_file:
-                        file = casc_file.data
-
-                    return file, ""
-
-                else:
-                    filepath = os.path.join(storage, identifier)
-                    return open(filepath, "rb").read(), filepath
+            filepath = os.path.join(storage, identifier)
+            return open(filepath, "rb").read(), filepath
 
         error_msg = "Requested file \"{}\" was not found in WoW filesystem.".format(identifier)
 
@@ -205,6 +165,7 @@ class WoWFileData:
             pairs.append((file, filepath_png_base.replace('\\', '/').encode('utf-8')))
 
         if pairs:
+            from ..blp import BLP2PNG
             BLP2PNG().convert(pairs, dir_path.encode('utf-8'))
 
         # note: assumes previous operation throws if it was not successful
@@ -265,55 +226,6 @@ class WoWFileData:
         return ret_path
 
     @staticmethod
-    def list_game_data_paths(path) -> List[Tuple[str, str]]:
-        """List files and directories in a directory that correspond to WoW patch naming rules."""
-        """Returns list of tuples (normalized_path, real_path)"""
-
-        dir_files: List[Tuple[str, str]] = []
-        for f in os.listdir(path):
-            cur_path = os.path.join(path, f)
-
-            if os.path.isfile(cur_path) \
-            and os.path.splitext(f)[1].lower() == '.mpq' \
-            or not os.path.isfile(cur_path) \
-            and re.match(r'patch-\w.mpq', f.lower()):
-                dir_files.append((cur_path.lower().strip(), cur_path))
-
-        map(lambda x: (x[0].lower(), x[1]), dir_files)
-
-        dir_files.sort(key=lambda s: os.path.splitext(s[0])[0])
-
-        locales = (
-            'frFR', 'deDE', 'enGB',
-            'enUS', 'itIT', 'koKR',
-            'zhCN', 'zhTW', 'ruRU',
-            'esES', 'esMX', 'ptBR'
-        )
-
-        for locale in locales:
-            locale_path = os.path.join(path, locale)
-            token = locale
-            if os.path.exists(locale_path):
-                break
-        else:
-            raise NotADirectoryError('\nFailed to load game data. WoW client appears to be missing a locale folder.')
-
-        locale_dir_files: List[Tuple[str, str]] = []
-        for f in os.listdir(locale_path):
-            cur_path = os.path.join(locale_path, f)
-
-            if os.path.isfile(cur_path) \
-            and os.path.splitext(f)[1].lower() == '.mpq' \
-            or not os.path.isfile(cur_path) \
-            and re.match(r'patch-{}-\w.mpq'.format(token), f.lower()):
-                locale_dir_files.append((cur_path.lower().strip(), cur_path))
-
-        map(lambda x: (x[0].lower(), x[1]), locale_dir_files)
-        locale_dir_files.sort(key=lambda s: os.path.splitext(s[0])[0])
-
-        return dir_files + locale_dir_files
-
-    @staticmethod
     def is_wow_path_valid(wow_path):
         """Check if a given path is a path to WoW client."""
         if wow_path:
@@ -330,6 +242,8 @@ class WoWFileData:
 
     @staticmethod
     def init_casc_storage(wow_path, project_path=None):
+        if WoWVersionManager().client_version < WoWVersions.WOD:
+            raise NotImplementedError("\nMPQ support was removed. pywowlib now supports WOD+ CASC clients only.")
 
         if not WoWFileData.is_wow_path_valid(wow_path):
             print("\nPath to World of Warcraft is empty or invalid. Failed to load game data.")
@@ -340,45 +254,12 @@ class WoWFileData:
 
         #wow_path = os.path.join(wow_path, '')  # ensure the path has trailing slash
 
-        casc = CASCHandler(wow_path, LocaleFlags.CASC_LOCALE_ALL, False)
+        casc = CASCHandler.open_local_storage(wow_path)
+        casc.set_flags(LocaleFlags.All)
 
         print("\nDone initializing data packages.")
         print("Total loading time: ", time.strftime("%M minutes %S seconds", time.gmtime(time.time() - start_time)))
         return [(casc, True), (project_path.lower().strip(os.sep), False)] if project_path else [(casc, True)]
-
-    @staticmethod
-    def init_mpq_storage(wow_path, project_path=None) -> List[Tuple[Union[MPQFile, str], bool]]:
-        """Open game resources and store links to them in memory"""
-
-        print("\nProcessing available game resources of client: " + wow_path)
-        start_time = time.time()
-
-        if not WoWFileData.is_wow_path_valid(wow_path):
-            print("\nPath to World of Warcraft is empty or invalid. Failed to load game data.")
-            return None
-
-        data_packages = WoWFileData.list_game_data_paths(os.path.join(wow_path, "Data"))
-
-        # project path takes top priority if it is not loaded already
-
-        if project_path:
-            p_path = project_path.lower().strip(os.sep)
-            if p_path not in data_packages:
-                data_packages.append((p_path, p_path))
-
-        resource_map: List[Tuple[Union[MPQFile, str], bool]] = []
-
-        for package, package_path in data_packages:
-            if os.path.isfile(package_path):
-                resource_map.append((MPQFile(package_path, 0x00000100), True))
-                print("\nLoaded MPQ: " + os.path.basename(package))
-            else:
-                resource_map.append((package_path, False))
-                print("\nLoaded folder patch: {}".format(os.path.basename(package)))
-
-        print("\nDone initializing data packages.")
-        print("Total loading time: ", time.strftime("%M minutes %S seconds", time.gmtime(time.time() - start_time)))
-        return resource_map
 
 
 class DBFilesClient:
@@ -415,7 +296,7 @@ class DBFilesClient:
         return True if check else False
 
     def init_tables(self):
-        self.add('AnimationData')
+        return
 
 
 

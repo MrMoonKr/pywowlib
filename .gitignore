@@ -1,7 +1,5 @@
 __pycache__/
-archives/mpq/native/build/
-archives/mpq/native/lib/
-archives/mpq/native/include/
+archives/.cache/
 build/
 blp/BLP2PNG/build/
 blp/BLP2PNG/blp.cpp
@@ -15,3 +13,4 @@ blp/PNG2BLP/blp.html
 *.pdb
 blp/.idea/
 blp/BLP2PNG/native/.idea/
+/.venv

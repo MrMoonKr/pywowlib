@@ -1,8 +1,6 @@
 import csv
 import os
 
-from bidict import bidict
-
 from enum import IntEnum, Enum
 from ..io_utils.types import singleton
 
