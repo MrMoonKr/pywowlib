@@ -1,5 +1,5 @@
 from .python_blp import BlpConverter as BLP2PNG
-from .python_blp import load_blp_image, load_blp_rgba
+from .python_blp import inspect_blp, load_blp_image, load_blp_rgba
 
 try:
     from .PNG2BLP.PNG2BLP import BlpFromPng as PNG2BLP

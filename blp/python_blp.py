@@ -25,6 +25,20 @@ class BlpHeader:
     sizes: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class BlpInfo:
+    signature: str
+    version: int
+    width: int
+    height: int
+    mip_levels: int
+    compression: int
+    compression_name: str
+    alpha_depth: int
+    alpha_compression: int
+    alpha_compression_name: str
+
+
 def _decode_path(value: bytes | str) -> str:
     return value.decode("utf-8") if isinstance(value, bytes) else value
 
@@ -49,6 +63,53 @@ def _parse_header(data: bytes) -> BlpHeader:
         height=unpacked[7],
         offsets=tuple(unpacked[8:24]),
         sizes=tuple(unpacked[24:40]),
+    )
+
+
+def _compression_name(header: BlpHeader) -> str:
+    if header.compression == 1:
+        return "Paletted"
+    if header.compression == 2:
+        if header.alpha_compression == 0:
+            return "DXT1"
+        if header.alpha_compression == 1:
+            return "DXT3"
+        if header.alpha_compression == 7:
+            return "DXT5"
+        return f"DXT (mode {header.alpha_compression})"
+    if header.compression == 3:
+        return "Uncompressed BGRA"
+    return f"Unknown ({header.compression})"
+
+
+def _alpha_compression_name(header: BlpHeader) -> str:
+    if header.compression == 2:
+        if header.alpha_compression == 0:
+            return "DXT1-bit alpha or none"
+        if header.alpha_compression == 1:
+            return "DXT3 explicit alpha"
+        if header.alpha_compression == 7:
+            return "DXT5 interpolated alpha"
+    if header.compression == 1:
+        return "Palette alpha plane"
+    if header.compression == 3:
+        return "Embedded BGRA alpha"
+    return f"Unknown ({header.alpha_compression})"
+
+
+def inspect_blp(data: bytes) -> BlpInfo:
+    header = _parse_header(data)
+    return BlpInfo(
+        signature=header.signature.decode("ascii"),
+        version=header.version,
+        width=header.width,
+        height=header.height,
+        mip_levels=header.mip_levels,
+        compression=header.compression,
+        compression_name=_compression_name(header),
+        alpha_depth=header.alpha_depth,
+        alpha_compression=header.alpha_compression,
+        alpha_compression_name=_alpha_compression_name(header),
     )
 
 

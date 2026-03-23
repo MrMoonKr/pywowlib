@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug wow_explorer",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/wow_explorer.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+      "justMyCode": false
+    }
+  ]
+}
